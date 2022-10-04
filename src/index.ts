@@ -3,13 +3,15 @@ import Ably from 'ably/promises';
 import * as Types from './types';
 
 export const createContext = <T>(context: T & Types.BaseClientContext) => context;
-export const createChannel = <T extends Record<string, Types.Schema>>(channel: Types.Channel<T>) => channel;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const createChannel = <C, T extends Record<string, Types.Schema>>(channel: Types.Channel<C, T>, context?: C) =>
+  channel;
 
 // Client State is managed here
 let client: Ably.Realtime | null = null;
 const configureClient = async (key: string, clientId: string) =>
   new Promise<Types.AblyClient>((resolve) => {
-    if (client) client.close();
+    if (!['closed', 'closing'].includes(client?.connection.state || '') && client) client.close();
 
     client = new Ably.Realtime({ key, clientId });
     client.connection.on('connected', () => {
@@ -25,12 +27,14 @@ const configureClient = async (key: string, clientId: string) =>
   });
 
 // The core of the whole library is in this function
-export const createRouter: Types.CreateRouter = async (router) => {
+export const createRouter = async <C, T extends Record<string, Record<string, Types.Schema>>>(
+  router: Types.Router<C, T>,
+): Promise<Types.ConfiguredRouter<C, T>> => {
   const client = await configureClient(router.context.key, router.context.clientId);
   const channels = {} as Record<string, Types.AblyChannel>;
 
-  // The channel subscribe function
-  const channelSubscribe = async (channel: string, message: string, callback: (data: any) => void) => {
+  // The base subscribe function
+  const baseSubscribe = async (channel: string, message: string, callback: (data: any) => void) => {
     const instance = channels[channel];
     const messageUtils = router.channels[channel].messages[message];
     const parsedCallback = (data: any) => {
@@ -45,28 +49,55 @@ export const createRouter: Types.CreateRouter = async (router) => {
     await instance.subscribe(message, parsedCallback);
   };
 
+  type ChannelsType = Types.Channel<C, T[keyof T]>;
+  type MessageTypes = Types.Message<C, T[keyof T][keyof (keyof T)]>;
   // Configure the channels
-  const configuredChannels = Object.entries(router.channels).reduce((acc, [channelName, channel]) => {
-    channels[channelName] = client.channels.get(channelName);
-    const instance = channels[channelName];
+  const configuredChannels = Object.entries<ChannelsType>(router.channels as any).reduce(
+    (acc, [channelName, channel]) => {
+      channels[channelName] = client.channels.get(channelName);
+      const instance = channels[channelName];
 
-    acc[channelName] = Object.entries<any>(channel.messages).reduce((acc, [messageName, message]) => {
-      acc[messageName] = (data: any) => {
-        const publish = () => instance.publish(messageName, data);
-        message.handler({ channel: instance, client, publish, ...router.context }, data);
+      // Channel level subscription
+      const channelSubscribe = async (message: string, callback: (data: any) => void) => {
+        await baseSubscribe(channelName, message, callback);
       };
 
+      const newChannel = {} as Types.ConfiguredChannel<C, T[keyof T]>;
+
+      newChannel.subscribe = channelSubscribe as Types.ConfiguredChannel<C, Record<string, Types.Schema>>['subscribe'];
+
+      newChannel.messages = Object.entries<MessageTypes>(channel.messages as any).reduce(
+        (acc, [messageName, message]) => {
+          const messageSubscribe = async (callback: (data: any) => void) => {
+            await baseSubscribe(channelName, messageName, callback);
+          };
+
+          acc[messageName as keyof ChannelsType['messages']] = {
+            subscribe: messageSubscribe as Types.ConfiguredMessage<Types.Schema>['subscribe'],
+            send: (data: any) => {
+              const publish = (data: any) => instance.publish(messageName, data);
+              message.handler({ channel: instance, client, publish, ...router.context }, data);
+            },
+          };
+
+          return acc;
+        },
+        {} as Types.ConfiguredChannel<C, T[keyof T]>['messages'],
+      );
+
+      acc[channelName as keyof T] = newChannel;
+
       return acc;
-    }, {} as Record<string, any>);
-    return acc;
-  }, {} as Record<string, any>);
+    },
+    {} as Types.ConfiguredRouter<C, T>['channels'],
+  );
 
   // Return the configured Router
   const configuredRouter = {
-    subscribe: channelSubscribe,
-    channels: configuredChannels,
+    subscribe: baseSubscribe as Types.ConfiguredRouter<C, T>['subscribe'],
+    channels: configuredChannels as { [K in keyof T]: Types.ConfiguredChannel<C, T[K]> },
     context: { ...router.context, client },
-  } as any; // TODO: Made the type infer correctly
+  };
 
   return configuredRouter;
 };
