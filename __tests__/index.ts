@@ -198,4 +198,41 @@ describe('Sunshine', () => {
 
     callback();
   });
+
+  test('PubSub: Dynamic Channel', (done) => {
+    const callback = async () => {
+      const context = createContext({
+        user: { name: { string: 'Dirk S Beukes' } },
+        clientId: '123',
+        key: 'zrtcEQ.N8Z_cA:zPgtz_wFo3os-Se5RIZIh6oyBCkHhhBvuad07F33DdY',
+      });
+
+      const testChannel = context.createChannel({
+        messages: {
+          message: {
+            data: z.object({ data: z.string() }),
+            handler: (context, content) => {
+              expect(content.data).toBe('🧪');
+              context.publish({ data: content.data });
+            },
+          },
+        },
+      });
+
+      const router = await context.createRouter({ channels: { testChannel } });
+
+      expect(router).toBeDefined();
+      await router.testChannel.subscribe('dynamic', 'global', (data) => {
+        expect(data.data).toBe('🧪');
+
+        router.client.close();
+
+        done();
+      });
+
+      router.testChannel.message.send('dynamic', { data: '🧪' });
+    };
+
+    callback();
+  });
 });

@@ -27,12 +27,19 @@ export type Router<C, T extends DRSchema> = {
 };
 
 export type ConfiguredChannel<C, T extends SRSchema> = {
-  subscribe: <K extends keyof T, H extends z.infer<Message<C, T[K]>['data']>>(message: K | 'global', callback: (data: H) => void) => Promise<void>;
+  subscribe: (<K extends keyof T, H extends z.infer<Message<C, T[K]>['data']>>(message: K | 'global', callback: (data: H) => void) => Promise<void>) &
+    (<K extends keyof T, H extends z.infer<Message<C, T[K]>['data']>>(
+      channelName: string,
+      message: K | 'global',
+      callback: (data: H) => void,
+    ) => Promise<void>);
 } & { [K in keyof T]: ConfiguredMessage<T[K]> };
 
 export type ConfiguredMessage<T extends Schema> = {
-  subscribe: (callback: (data: z.infer<T>) => void) => Promise<void>;
-  send: (data: z.infer<T>) => void;
+  subscribe: ((callback: (data: z.infer<T>) => void) => Promise<void>) & ((messageName: string, callback: (data: z.infer<T>) => void) => Promise<void>);
+  send: ((data: z.infer<T>) => void) &
+    ((channelName: string, data: z.infer<T>) => void) &
+    ((channelName: string, messageName: string, data: z.infer<T>) => void);
 };
 
 export type Channel<C, T extends SRSchema> = {

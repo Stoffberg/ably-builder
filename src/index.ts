@@ -57,8 +57,10 @@ export const createRouter = async <C, T extends t.DRSchema>(router: t.Router<C, 
 
   // The base subscribe function
   const baseSubscribe: t.ConfiguredRouter<any, t.DRSchema>['subscribe'] = async (channel: string, message: string, callback: (data: any) => void) => {
+    if (!channels[channel]) channels[channel] = client.channels.get(channel);
     const instance = channels[channel];
-    const messageUtils = router.channels[channel].messages[message];
+
+    const messageUtils = router.channels[channel]?.messages[message];
 
     const parsedCallback = (data: any) => {
       const parsedData = messageUtils.data.parse(data.data);
@@ -84,8 +86,13 @@ export const createRouter = async <C, T extends t.DRSchema>(router: t.Router<C, 
     const instance = channels[channelName];
 
     // Channel level subscription
-    const channelSubscribe = async (message: string, callback: (data: any) => void) => {
-      await baseSubscribe(channelName, message, callback);
+    const channelSubscribe = async (_channelName: string, message: string | ((data: any) => void), callback?: (data: any) => void) => {
+      if (typeof message === 'string') {
+        if (!callback) throw new Error('Callback is not defined');
+        return await baseSubscribe(_channelName, message, callback);
+      } else {
+        return await baseSubscribe(channelName, 'global', message);
+      }
     };
 
     const newChannel = {} as t.ConfiguredChannel<any, t.SRSchema>;
@@ -99,9 +106,17 @@ export const createRouter = async <C, T extends t.DRSchema>(router: t.Router<C, 
 
       acc[messageName as keyof ConfigChannelType] = {
         subscribe: messageSubscribe as ConfigMessageType['subscribe'],
-        send: (data: any) => {
-          const publish = (data: any) => instance.publish(messageName, data);
-          message.handler({ channel: instance, client, publish, ...context }, data);
+        send: (_channelName: any, _messageName: any, data: any) => {
+          let _instance = channels[channelName];
+          let publish = (data: any) => _instance.publish(messageName, data);
+
+          const FS = typeof _channelName === 'string';
+          const SS = typeof _messageName === 'string';
+
+          if (FS) _instance = channels[_channelName];
+          if (SS) publish = (data: any) => _instance.publish(_messageName, data);
+
+          message.handler({ channel: _instance, client, publish, ...context }, FS ? (SS ? data : _messageName) : _channelName);
         },
       } as t.ConfiguredMessage<t.Schema>;
 
