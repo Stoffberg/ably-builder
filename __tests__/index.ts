@@ -44,7 +44,7 @@ describe('Sunshine', () => {
         done();
       });
 
-      router.channels.testChannel.messages.reation.send({ emoji: '🧪' });
+      router.testChannel.reation.send({ emoji: '🧪' });
     };
 
     callback();
@@ -82,7 +82,7 @@ describe('Sunshine', () => {
         done();
       });
 
-      router.channels.testChannel.messages.context.send({ user: { name: { string: 'Invalid Type' } } });
+      router.testChannel.context.send({ user: { name: { string: 'Invalid Type' } } });
     };
 
     callback();
@@ -111,7 +111,7 @@ describe('Sunshine', () => {
       const router = await context.createRouter({ channels: { testChannel } });
 
       expect(router).toBeDefined();
-      await router.channels.testChannel.subscribe('message', (data) => {
+      await router.testChannel.subscribe('message', (data) => {
         expect(data.data).toBe('Hello World');
 
         router.client.close();
@@ -119,7 +119,7 @@ describe('Sunshine', () => {
         done();
       });
 
-      router.channels.testChannel.messages.message.send({ data: 'Hello World' });
+      router.testChannel.message.send({ data: 'Hello World' });
     };
 
     callback();
@@ -148,7 +148,7 @@ describe('Sunshine', () => {
       const router = await context.createRouter({ channels: { testChannel } });
 
       expect(router).toBeDefined();
-      await router.channels.testChannel.messages.message.subscribe((data) => {
+      await router.testChannel.message.subscribe((data) => {
         expect(data.data).toBe('Hello World');
 
         router.client.close();
@@ -156,13 +156,13 @@ describe('Sunshine', () => {
         done();
       });
 
-      router.channels.testChannel.messages.message.send({ data: 'Hello World' });
+      router.testChannel.message.send({ data: 'Hello World' });
     };
 
     callback();
   });
 
-  test('PubSub: Global Message Subscription', (done) => {
+  test('PubSub: Global Message Sub', (done) => {
     const callback = async () => {
       const context = createContext({
         user: { name: { string: 'Dirk S Beukes' } },
@@ -185,7 +185,7 @@ describe('Sunshine', () => {
       const router = await context.createRouter({ channels: { testChannel } });
 
       expect(router).toBeDefined();
-      await router.channels.testChannel.subscribe('global', (data) => {
+      await router.testChannel.subscribe('global', (data) => {
         expect(data.data).toBe('🧪');
 
         router.client.close();
@@ -193,7 +193,7 @@ describe('Sunshine', () => {
         done();
       });
 
-      router.channels.testChannel.messages.message.send({ data: '🧪' });
+      router.testChannel.message.send({ data: '🧪' });
     };
 
     callback();

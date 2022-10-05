@@ -11,13 +11,12 @@ export type CreateRouter = <C, T extends DRSchema>(router: Router<C, T>, context
 export type ConfiguredRouter<C, T extends DRSchema> = {
   context: C & BaseClientContext;
   client: ExtendedClient;
-  channels: { [K in keyof T]: ConfiguredChannel<C, T[K]> };
   subscribe: <K extends keyof T, P extends keyof Channel<C, T[K]>['messages'], H extends z.infer<Message<C, T[K][P]>['data']>>(
     channel: K,
     message: P | 'global',
     callback: (data: H) => void,
   ) => Promise<void>;
-};
+} & { [K in keyof T]: ConfiguredChannel<C, T[K]> };
 
 export type ExtendedClient = Types.RealtimePromise & {
   close: () => Promise<void>;
@@ -29,8 +28,7 @@ export type Router<C, T extends DRSchema> = {
 
 export type ConfiguredChannel<C, T extends SRSchema> = {
   subscribe: <K extends keyof T, H extends z.infer<Message<C, T[K]>['data']>>(message: K | 'global', callback: (data: H) => void) => Promise<void>;
-  messages: { [K in keyof T]: ConfiguredMessage<T[K]> };
-};
+} & { [K in keyof T]: ConfiguredMessage<T[K]> };
 
 export type ConfiguredMessage<T extends Schema> = {
   subscribe: (callback: (data: z.infer<T>) => void) => Promise<void>;

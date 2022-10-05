@@ -92,12 +92,12 @@ export const createRouter = async <C, T extends t.DRSchema>(router: t.Router<C, 
 
     newChannel.subscribe = channelSubscribe as t.ConfiguredChannel<any, t.SRSchema>['subscribe'];
 
-    newChannel.messages = Object.entries<t.Message<any, t.Schema>>(channel.messages as any).reduce((acc, [messageName, message]) => {
+    const messages = Object.entries<t.Message<any, t.Schema>>(channel.messages as any).reduce((acc, [messageName, message]) => {
       const messageSubscribe = async (callback: (data: any) => void) => {
         await baseSubscribe(channelName, messageName, callback);
       };
 
-      acc[messageName as keyof ConfigChannelType['messages']] = {
+      acc[messageName as keyof ConfigChannelType] = {
         subscribe: messageSubscribe as ConfigMessageType['subscribe'],
         send: (data: any) => {
           const publish = (data: any) => instance.publish(messageName, data);
@@ -106,17 +106,17 @@ export const createRouter = async <C, T extends t.DRSchema>(router: t.Router<C, 
       } as t.ConfiguredMessage<t.Schema>;
 
       return acc;
-    }, {} as ConfigChannelType['messages']);
+    }, {} as Record<string, t.ConfiguredMessage<t.Schema>>);
 
-    acc[channelName] = newChannel;
+    acc[channelName] = { ...newChannel, ...messages } as ConfigChannelType;
 
     return acc;
-  }, {} as t.ConfiguredRouter<any, t.DRSchema>['channels']);
+  }, {} as t.ConfiguredRouter<any, t.DRSchema>);
 
   // Return the configured Router
   const configuredRouter = {
+    ...configuredChannels,
     subscribe: baseSubscribe,
-    channels: configuredChannels,
     context,
     client,
   } as unknown as t.ConfiguredRouter<C, T>;
