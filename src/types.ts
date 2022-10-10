@@ -11,14 +11,14 @@ export type CreateRouter = <C, T extends DRSchema>(router: Router<C, T>, context
 export type ConfiguredRouter<C, T extends DRSchema> = {
   context: C & BaseClientContext;
   client: ExtendedClient;
-  subscribe: <K extends keyof T, P extends keyof Channel<C, T[K]>['messages'], H extends z.infer<Message<C, T[K][P]>['data']>>(
-    channel: K,
-    message: P | 'global',
-    callback: (data: H) => void,
-  ) => Promise<void>;
-} & { [K in keyof T]: ConfiguredChannel<C, T[K]> };
+  channels: { [K in keyof T]: (channelOptions?: ConfiguredChannelOptions) => ConfiguredChannel<C, T[K]> };
+};
 
-export type ExtendedClient = Types.RealtimePromise & {
+export type ConfiguredChannelOptions = {
+  name?: string;
+};
+
+export type ExtendedClient = Omit<Types.RealtimePromise, 'close'> & {
   close: () => Promise<void>;
 };
 
@@ -27,19 +27,17 @@ export type Router<C, T extends DRSchema> = {
 };
 
 export type ConfiguredChannel<C, T extends SRSchema> = {
-  subscribe: (<K extends keyof T, H extends z.infer<Message<C, T[K]>['data']>>(message: K | 'global', callback: (data: H) => void) => Promise<void>) &
-    (<K extends keyof T, H extends z.infer<Message<C, T[K]>['data']>>(
-      channelName: string,
-      message: K | 'global',
-      callback: (data: H) => void,
-    ) => Promise<void>);
-} & { [K in keyof T]: ConfiguredMessage<T[K]> };
+  subscribe: <K extends keyof T, H extends z.infer<Message<C, T[K]>['data']>>(callback: (data: H) => void) => Promise<void>;
+  messages: { [K in keyof T]: (messageOptions?: ConfiguredMessageOptions) => ConfiguredMessage<T[K]> };
+};
+
+export type ConfiguredMessageOptions = {
+  name?: string;
+};
 
 export type ConfiguredMessage<T extends Schema> = {
-  subscribe: ((callback: (data: z.infer<T>) => void) => Promise<void>) & ((messageName: string, callback: (data: z.infer<T>) => void) => Promise<void>);
-  send: ((data: z.infer<T>) => void) &
-    ((channelName: string, data: z.infer<T>) => void) &
-    ((channelName: string, messageName: string, data: z.infer<T>) => void);
+  subscribe: (callback: (data: z.infer<T>) => void) => Promise<void>;
+  send: (data: z.infer<T>) => Promise<void>;
 };
 
 export type Channel<C, T extends SRSchema> = {
@@ -48,14 +46,14 @@ export type Channel<C, T extends SRSchema> = {
 
 export type Message<C, T extends Schema> = {
   data: T;
-  handler: (context: C & ChannelHandlerContext<T>, data: z.infer<T>) => void;
+  handler: (context: C & ChannelHandlerContext<T>, data: z.infer<T>) => Promise<void> | void;
   transform?: (context: BaseClientContext, data: z.infer<T>) => z.infer<T>;
 };
 
 export type ChannelHandlerContext<T extends Schema> = {
   channel: Types.RealtimeChannelPromise;
   client: Types.RealtimePromise;
-  publish: (data: z.infer<T>) => void;
+  publish: (data: z.infer<T>) => Promise<void>;
 } & BaseClientContext;
 
 export type BaseClientContext = {

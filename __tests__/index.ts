@@ -10,7 +10,7 @@ describe('Sunshine', () => {
     const callback = async () => {
       const context = createContext({
         user: { id: { name: 'kjsngd' } },
-        clientId: '123',
+        clientId: performance.now().toString(),
         key: 'zrtcEQ.N8Z_cA:zPgtz_wFo3os-Se5RIZIh6oyBCkHhhBvuad07F33DdY',
       });
 
@@ -36,15 +36,18 @@ describe('Sunshine', () => {
       const router = await context.createRouter({ channels: { testChannel } });
 
       expect(router).toBeDefined();
-      await router.subscribe('testChannel', 'reation', (data) => {
-        expect(data.emoji).toBe('🧪');
+      await router.channels
+        .testChannel()
+        .messages.reation()
+        .subscribe(async (data) => {
+          expect(data.emoji).toBe('🧪');
 
-        router.client.close();
+          await router.client.close();
 
-        done();
-      });
+          done();
+        });
 
-      router.testChannel.reation.send({ emoji: '🧪' });
+      router.channels.testChannel().messages.reation().send({ emoji: '🧪' });
     };
 
     callback();
@@ -54,7 +57,7 @@ describe('Sunshine', () => {
     const callback = async () => {
       const context = createContext({
         user: { name: { string: 'Dirk S Beukes' } },
-        clientId: '123',
+        clientId: performance.now().toString(),
         key: 'zrtcEQ.N8Z_cA:zPgtz_wFo3os-Se5RIZIh6oyBCkHhhBvuad07F33DdY',
       });
 
@@ -74,15 +77,21 @@ describe('Sunshine', () => {
       const router = await context.createRouter({ channels: { testChannel } });
 
       expect(router).toBeDefined();
-      await router.subscribe('testChannel', 'context', (data) => {
-        expect(data.user.name.string).toBe('Dirk S Beukes');
+      await router.channels
+        .testChannel()
+        .messages.context()
+        .subscribe(async (data) => {
+          expect(data.user.name.string).toBe('Dirk S Beukes');
 
-        router.client.close();
+          await router.client.close();
 
-        done();
-      });
+          done();
+        });
 
-      router.testChannel.context.send({ user: { name: { string: 'Invalid Type' } } });
+      router.channels
+        .testChannel()
+        .messages.context()
+        .send({ user: { name: { string: 'Invalid Type' } } });
     };
 
     callback();
@@ -92,7 +101,7 @@ describe('Sunshine', () => {
     const callback = async () => {
       const context = createContext({
         user: { name: { string: 'Dirk S Beukes' } },
-        clientId: '123',
+        clientId: performance.now().toString(),
         key: 'zrtcEQ.N8Z_cA:zPgtz_wFo3os-Se5RIZIh6oyBCkHhhBvuad07F33DdY',
       });
 
@@ -111,15 +120,15 @@ describe('Sunshine', () => {
       const router = await context.createRouter({ channels: { testChannel } });
 
       expect(router).toBeDefined();
-      await router.testChannel.subscribe('message', (data) => {
+      await router.channels.testChannel().subscribe(async (data) => {
         expect(data.data).toBe('Hello World');
 
-        router.client.close();
+        await router.client.close();
 
         done();
       });
 
-      router.testChannel.message.send({ data: 'Hello World' });
+      router.channels.testChannel().messages.message().send({ data: 'Hello World' });
     };
 
     callback();
@@ -129,7 +138,7 @@ describe('Sunshine', () => {
     const callback = async () => {
       const context = createContext({
         user: { name: { string: 'Dirk S Beukes' } },
-        clientId: '123',
+        clientId: performance.now().toString(),
         key: 'zrtcEQ.N8Z_cA:zPgtz_wFo3os-Se5RIZIh6oyBCkHhhBvuad07F33DdY',
       });
 
@@ -148,91 +157,101 @@ describe('Sunshine', () => {
       const router = await context.createRouter({ channels: { testChannel } });
 
       expect(router).toBeDefined();
-      await router.testChannel.message.subscribe((data) => {
-        expect(data.data).toBe('Hello World');
+      await router.channels
+        .testChannel()
+        .messages.message()
+        .subscribe(async (data) => {
+          expect(data.data).toBe('Hello World');
 
-        router.client.close();
+          await router.client.close();
 
-        done();
-      });
+          done();
+        });
 
-      router.testChannel.message.send({ data: 'Hello World' });
-    };
-
-    callback();
-  });
-
-  test('PubSub: Global Message Sub', (done) => {
-    const callback = async () => {
-      const context = createContext({
-        user: { name: { string: 'Dirk S Beukes' } },
-        clientId: '123',
-        key: 'zrtcEQ.N8Z_cA:zPgtz_wFo3os-Se5RIZIh6oyBCkHhhBvuad07F33DdY',
-      });
-
-      const testChannel = context.createChannel({
-        messages: {
-          message: {
-            data: z.object({ data: z.string() }),
-            handler: (context, content) => {
-              expect(content.data).toBe('🧪');
-              context.publish({ data: content.data });
-            },
-          },
-        },
-      });
-
-      const router = await context.createRouter({ channels: { testChannel } });
-
-      expect(router).toBeDefined();
-      await router.testChannel.subscribe('global', (data) => {
-        expect(data.data).toBe('🧪');
-
-        router.client.close();
-
-        done();
-      });
-
-      router.testChannel.message.send({ data: '🧪' });
-    };
-
-    callback();
-  });
-
-  test('PubSub: Dynamic Channel', (done) => {
-    const callback = async () => {
-      const context = createContext({
-        user: { name: { string: 'Dirk S Beukes' } },
-        clientId: '123',
-        key: 'zrtcEQ.N8Z_cA:zPgtz_wFo3os-Se5RIZIh6oyBCkHhhBvuad07F33DdY',
-      });
-
-      const testChannel = context.createChannel({
-        messages: {
-          message: {
-            data: z.object({ data: z.string() }),
-            handler: (context, content) => {
-              expect(content.data).toBe('🧪');
-              context.publish({ data: content.data });
-            },
-          },
-        },
-      });
-
-      const router = await context.createRouter({ channels: { testChannel } });
-
-      expect(router).toBeDefined();
-      await router.testChannel.subscribe('dynamic', 'global', (data) => {
-        expect(data.data).toBe('🧪');
-
-        router.client.close();
-
-        done();
-      });
-
-      router.testChannel.message.send('dynamic', { data: '🧪' });
+      router.channels.testChannel().messages.message().send({ data: 'Hello World' });
     };
 
     callback();
   });
 });
+
+describe('Dynamic', () => {
+  test('PubSub: Channel', (done) => {
+    const callback = async () => {
+      const context = createContext({
+        user: { name: { string: 'Dirk S Beukes' } },
+        clientId: performance.now().toString(),
+        key: 'zrtcEQ.N8Z_cA:zPgtz_wFo3os-Se5RIZIh6oyBCkHhhBvuad07F33DdY',
+      });
+
+      const testChannel = context.createChannel({
+        messages: {
+          message: {
+            data: z.object({ data: z.string() }),
+            handler: (context, content) => {
+              expect(content.data).toBe('🧪');
+              context.publish({ data: content.data });
+            },
+          },
+        },
+      });
+
+      const router = await context.createRouter({ channels: { testChannel } });
+
+      expect(router).toBeDefined();
+      await router.channels.testChannel({ name: 'dynamic' }).subscribe(async (data) => {
+        expect(data.data).toBe('🧪');
+
+        await router.client.close();
+
+        done();
+      });
+
+      router.channels.testChannel({ name: 'dynamic' }).messages.message().send({ data: '🧪' });
+    };
+
+    callback();
+  });
+
+  test('PubSub: Message', (done) => {
+    const callback = async () => {
+      const context = createContext({
+        user: { name: { string: 'Dirk S Beukes' } },
+        clientId: performance.now().toString(),
+        key: 'zrtcEQ.N8Z_cA:zPgtz_wFo3os-Se5RIZIh6oyBCkHhhBvuad07F33DdY',
+      });
+
+      const testChannel = context.createChannel({
+        messages: {
+          message: {
+            data: z.object({ data: z.string() }),
+            handler: async (context, content) => {
+              expect(content.data).toBe('🧪');
+              await context.publish({ data: content.data });
+            },
+          },
+        },
+      });
+
+      const router = await context.createRouter({ channels: { testChannel } });
+
+      expect(router).toBeDefined();
+      await router.channels
+        .testChannel()
+        .messages.message({ name: 'dynamic' })
+        .subscribe(async (data) => {
+          expect(data.data).toBe('🧪');
+
+          await router.client.close();
+
+          done();
+        });
+
+      await router.channels.testChannel().messages.message({ name: 'dynamic' }).send({ data: '🧪' });
+    };
+
+    callback();
+  });
+});
+
+// router.channels.testChannel('dynamic').message.textMessage().send({ data: '🧪' });

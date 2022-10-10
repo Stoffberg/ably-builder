@@ -12,19 +12,18 @@ export const createContext = <C>(context: C & t.BaseClientContext) => ({
 });
 
 // Client State is managed here
-let client: Ably.Realtime | null = null;
+let _client = null as Ably.Realtime | null;
 const closeClient = async () => {
-  if (!client) return;
-  client?.connection.state;
+  if (!_client) return;
 
-  if (['initialized', 'connected'].includes(client?.connection.state || '') && client) client.close();
+  if (['initialized', 'connected'].includes(_client?.connection.state || '') && _client) _client.close();
 
   const timeout = setTimeout(() => {
     throw new Error('Client did not close');
   }, 5000);
 
   // resolve when client is closed
-  await client.connection.whenState('closed');
+  await _client.connection.whenState('closed');
 
   return clearTimeout(timeout);
 };
@@ -34,14 +33,14 @@ const configureClient = async (key: string, clientId: string) =>
     const callback = async () => {
       await closeClient();
 
-      client = new Ably.Realtime({ key, clientId });
-      client.connection.on('connected', () => {
+      _client = new Ably.Realtime({ key, clientId });
+      _client.connection.on('connected', () => {
         //console.log('Connected to Ably');
-        if (!client) throw new Error('Client connected, but is not defined');
-        resolve({ ...client, close: closeClient });
+        if (!_client) throw new Error('Client connected, but is not defined');
+        resolve({ ..._client, close: closeClient });
       });
 
-      client.connection.on('failed', (e) => {
+      _client.connection.on('failed', (e) => {
         console.log('Failed to connect to Ably');
         throw new Error("The client couldn't be initialized: \n" + e);
       });
@@ -53,88 +52,80 @@ const configureClient = async (key: string, clientId: string) =>
 // The core of the whole library is in this function
 export const createRouter = async <C, T extends t.DRSchema>(router: t.Router<C, T>, context: C & t.BaseClientContext): Promise<t.ConfiguredRouter<C, T>> => {
   const client = await configureClient(context.key, context.clientId);
-  const channels = {} as Record<string, t.AblyChannel>;
+  const _channels = new Map<string, t.AblyChannel>();
 
-  // The base subscribe function
-  const baseSubscribe: t.ConfiguredRouter<any, t.DRSchema>['subscribe'] = async (channel: string, message: string, callback: (data: any) => void) => {
-    if (!channels[channel]) channels[channel] = client.channels.get(channel);
-    const instance = channels[channel];
+  const configureChannel = (channel: string) => {
+    if (!_client) throw new Error('Client is not defined');
 
-    const messageUtils = router.channels[channel]?.messages[message];
+    if (!_channels.has(channel)) _channels.set(channel, _client.channels.get(channel));
 
-    const parsedCallback = (data: any) => {
-      const parsedData = messageUtils.data.parse(data.data);
-      if (messageUtils.transform) {
-        const transformedData = messageUtils.transform(context, parsedData);
-        callback(transformedData);
-      } else {
-        callback(parsedData);
-      }
-    };
-
-    const basicCallback = (data: any) => callback(data.data); // need to transform the data passed in the function
-
-    if (message === 'global') await instance.subscribe(basicCallback);
-    else await instance.subscribe(message, parsedCallback);
+    return _channels.get(channel) as t.AblyChannel;
   };
 
-  type ConfigChannelType = t.ConfiguredChannel<any, t.SRSchema>;
-  type ConfigMessageType = t.ConfiguredMessage<t.Schema>;
-  // Configure the channels
-  const configuredChannels = Object.entries<t.Channel<any, t.SRSchema>>(router.channels as any).reduce((acc, [channelName, channel]) => {
-    channels[channelName] = client.channels.get(channelName);
-    const instance = channels[channelName];
+  type MessageUtils = { schema: t.Schema; transform?: (context: any, data: any) => any };
+  type SubscriptionData = { channel: string; message?: string; callback: (data: any) => void; utils?: MessageUtils };
+  const _subscribe = async ({ channel, message, callback, utils }: SubscriptionData) => {
+    const instance = configureChannel(channel);
 
-    // Channel level subscription
-    const channelSubscribe = async (_channelName: string, message: string | ((data: any) => void), callback?: (data: any) => void) => {
-      if (typeof message === 'string') {
-        if (!callback) throw new Error('Callback is not defined');
-        return await baseSubscribe(_channelName, message, callback);
-      } else {
-        return await baseSubscribe(channelName, 'global', message);
-      }
+    const adjustData = (data: any) => {
+      if (!utils) return data;
+      const { schema, transform } = utils;
+      const result = schema.safeParse(data);
+      if (!result.success) throw new Error('Invalid data received');
+
+      return transform ? transform(context, result.data) : result.data;
     };
 
-    const newChannel = {} as t.ConfiguredChannel<any, t.SRSchema>;
+    const adjustedCallback = (data: any) => callback(adjustData(data.data));
 
-    newChannel.subscribe = channelSubscribe as t.ConfiguredChannel<any, t.SRSchema>['subscribe'];
+    if (!message) await instance.subscribe(adjustedCallback);
+    else await instance.subscribe(message, adjustedCallback);
+  };
 
-    const messages = Object.entries<t.Message<any, t.Schema>>(channel.messages as any).reduce((acc, [messageName, message]) => {
-      const messageSubscribe = async (callback: (data: any) => void) => {
-        await baseSubscribe(channelName, messageName, callback);
-      };
+  const configuredRouter = { context, client, channels: {} } as t.ConfiguredRouter<C, t.DRSchema>;
 
-      acc[messageName as keyof ConfigChannelType] = {
-        subscribe: messageSubscribe as ConfigMessageType['subscribe'],
-        send: (_channelName: any, _messageName: any, data: any) => {
-          let _instance = channels[channelName];
-          let publish = (data: any) => _instance.publish(messageName, data);
+  const channelMap = new Map<string, t.Channel<C, any>>(Object.entries(router.channels));
+  const channelIterator = channelMap.entries();
+  for (let i = 0; i < channelMap.size; i++) {
+    const [oldChannelName, channel] = channelIterator.next().value as [string, t.Channel<C, any>];
 
-          const FS = typeof _channelName === 'string';
-          const SS = typeof _messageName === 'string';
+    const _configureChannel = (channelOptions?: t.ConfiguredChannelOptions) => {
+      const channelName = channelOptions?.name || oldChannelName;
+      const instance = configureChannel(channelName);
 
-          if (FS) _instance = channels[_channelName];
-          if (SS) publish = (data: any) => _instance.publish(_messageName, data);
+      const _channelSubscribe = (callback: (data: any) => void) => _subscribe({ channel: channelName, callback });
 
-          message.handler({ channel: _instance, client, publish, ...context }, FS ? (SS ? data : _messageName) : _channelName);
-        },
-      } as t.ConfiguredMessage<t.Schema>;
+      const configuredMessages = {} as Record<string, (messageOptions?: t.ConfiguredMessageOptions) => t.ConfiguredMessage<t.Schema>>;
 
-      return acc;
-    }, {} as Record<string, t.ConfiguredMessage<t.Schema>>);
+      const messageMap = new Map<string, t.Message<any, any>>(Object.entries(channel.messages));
+      const messageIterator = messageMap.entries();
+      for (let j = 0; j < messageMap.size; j++) {
+        const [baseMessageName, message] = messageIterator.next().value as [string, t.Message<C, any>];
 
-    acc[channelName] = { ...newChannel, ...messages } as ConfigChannelType;
+        const _configureMessage = (messageOptions?: t.ConfiguredMessageOptions) => {
+          const messageName = messageOptions?.name || baseMessageName;
 
-    return acc;
-  }, {} as t.ConfiguredRouter<any, t.DRSchema>);
+          const _messageSubscribe = async (callback: (data: any) => void) => {
+            const utils = { schema: message.data, transform: message.transform };
+            await _subscribe({ channel: channelName, message: messageName, callback, utils });
+          };
 
-  // Return the configured Router
-  const configuredRouter = {
-    ...configuredChannels,
-    subscribe: baseSubscribe,
-    context,
-    client,
-  } as unknown as t.ConfiguredRouter<C, T>;
+          const _messageSend = async (data: any) => {
+            const publish = async (data: any) => await instance.publish(messageName, data);
+            await message.handler({ channel: instance, client, publish, ...context }, data);
+          };
 
-  return configuredRouter;
+          return { subscribe: _messageSubscribe, send: _messageSend };
+        };
+
+        configuredMessages[baseMessageName] = _configureMessage;
+      }
+
+      return { messages: configuredMessages, subscribe: _channelSubscribe };
+    };
+
+    configuredRouter.channels[oldChannelName] = _configureChannel;
+  }
+
+  return configuredRouter as unknown as t.ConfiguredRouter<C, T>;
 };
